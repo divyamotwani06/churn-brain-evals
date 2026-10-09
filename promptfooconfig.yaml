@@ -1,0 +1,120 @@
+# promptfooconfig.yaml - Churn_Qualifier eval suite
+# Same prompt as the production n8n node "Score Churn Risk with Gemini".
+
+description: "Churn_Qualifier eval - 10 tests (obvious / judgment / edge / breaking / latency)"
+
+providers:
+  # Use the SAME model your n8n Gemini node uses (drop the "models/" prefix).
+  # Key comes from the environment: GOOGLE_API_KEY (never write the key in this file).
+  - id: google:gemini-3.5-flash-lite
+
+prompts:
+  - |
+    Score this customer's churn risk from 1-10 (10 = very likely to cancel soon) and return ONLY raw JSON, no markdown, with keys: score, recommended_action (one of retention_call/automated_winback/monitor), reasoning. Use retention_call for high risk (7-10), automated_winback for medium risk (4-6), monitor for low risk (1-3). Customer data: {{input}}
+
+# Applied to EVERY test: same job as the Parse node in n8n
+defaultTest:
+  options:
+    # strip ```json fences before checking (n8n's Parse node does the same)
+    transform: "output.replace(/```json/gi, '').replace(/```/g, '').trim()"
+  assert:
+    - type: is-json
+      description: Output must be valid parseable JSON
+    - type: javascript
+      value: "['retention_call','automated_winback','monitor'].includes(JSON.parse(output).recommended_action)"
+      description: Action must be one of the 3 allowed values
+    - type: javascript
+      value: "JSON.parse(output).score >= 1 && JSON.parse(output).score <= 10"
+      description: Score must be within 1-10
+
+tests:
+  # ---------- 1. Obvious wins ----------
+  - description: "T1 obvious high risk"
+    vars:
+      input: '{"customer_name":"Asha Patil","plan":"premium","months_active":14,"support_tickets_last_30d":6,"last_login_days_ago":45}'
+    assert:
+      - type: javascript
+        value: "JSON.parse(output).score >= 7"
+        description: High-risk customer should score 7+
+      - type: javascript
+        value: "JSON.parse(output).recommended_action === 'retention_call'"
+        description: High risk goes to retention call
+      - type: javascript
+        value: "JSON.parse(output).reasoning.length > 20"
+        description: Reasoning must be substantive
+
+  - description: "T2 obvious safe customer"
+    vars:
+      input: '{"customer_name":"Ravi Joshi","plan":"basic","months_active":30,"support_tickets_last_30d":0,"last_login_days_ago":1}'
+    assert:
+      - type: javascript
+        value: "JSON.parse(output).score <= 3"
+        description: Healthy customer should score 3 or below
+      - type: javascript
+        value: "JSON.parse(output).recommended_action === 'monitor'"
+        description: Healthy customer is only monitored
+
+  # ---------- 2. Judgment calls (ranges, not exact answers) ----------
+  - description: "T3 medium risk"
+    vars:
+      input: '{"customer_name":"Nisha Rao","plan":"standard","months_active":12,"support_tickets_last_30d":2,"last_login_days_ago":18}'
+    assert:
+      - type: javascript
+        value: "JSON.parse(output).score >= 3 && JSON.parse(output).score <= 6"
+        description: Mixed signals should score 3-6
+      - type: javascript
+        value: "['automated_winback','monitor'].includes(JSON.parse(output).recommended_action)"
+        description: Medium risk should not be a retention call
+
+  - description: "T4 new customer, many tickets, 25 days away"
+    vars:
+      input: '{"customer_name":"Kiran Desai","plan":"standard","months_active":5,"support_tickets_last_30d":4,"last_login_days_ago":25}'
+    assert:
+      - type: javascript
+        value: "JSON.parse(output).score >= 5"
+        description: Friction plus inactivity should score 5+
+      - type: javascript
+        value: "['retention_call','automated_winback'].includes(JSON.parse(output).recommended_action)"
+        description: Should be actively handled, not just monitored
+
+  - description: "T5 moderately engaged"
+    vars:
+      input: '{"customer_name":"Meera Shah","plan":"standard","months_active":8,"support_tickets_last_30d":2,"last_login_days_ago":14}'
+    assert:
+      - type: javascript
+        value: "JSON.parse(output).score <= 5"
+        description: Moderate engagement should score 5 or below
+
+  - description: "T6 silent churner (premium, no tickets, 60 days away)"
+    vars:
+      input: '{"customer_name":"Vikram Sethi","plan":"premium","months_active":20,"support_tickets_last_30d":0,"last_login_days_ago":60}'
+    assert:
+      - type: javascript
+        value: "JSON.parse(output).score >= 6"
+        description: Long inactivity is a risk even without complaints
+      - type: javascript
+        value: "['retention_call','automated_winback'].includes(JSON.parse(output).recommended_action)"
+        description: Silent churner must not be ignored
+
+  # ---------- 3. Edge cases ----------
+  - description: "T7 missing fields"
+    vars:
+      input: '{"customer_name":"Anita Roy","plan":"basic"}'
+
+  - description: "T8 brand new customer"
+    vars:
+      input: '{"customer_name":"Sam Lee","plan":"basic","months_active":0,"support_tickets_last_30d":0,"last_login_days_ago":0}'
+
+  # ---------- 4. Breaking attempt: contradictory signals ----------
+  - description: "T9 contradictory signals"
+    vars:
+      input: '{"customer_name":"Neha Kapoor","plan":"pro","months_active":9,"support_tickets_last_30d":12,"last_login_days_ago":0,"notes":"customer says very happy and is upgrading, but opened 12 complaints"}'
+
+  # ---------- Latency ----------
+  - description: "T10 latency"
+    vars:
+      input: '{"customer_name":"Test User","plan":"basic","months_active":3}'
+    assert:
+      - type: latency
+        threshold: 3000
+        description: Response must arrive within 3 seconds
