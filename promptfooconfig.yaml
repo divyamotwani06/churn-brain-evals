@@ -34,7 +34,7 @@ tests:
       input: '{"customer_name":"Asha Patil","plan":"premium","months_active":14,"support_tickets_last_30d":6,"last_login_days_ago":45}'
     assert:
       - type: javascript
-        value: "JSON.parse(output).score >= 15"
+        value: "JSON.parse(output).score >= 7"
         description: High-risk customer should score 7+
       - type: javascript
         value: "JSON.parse(output).recommended_action === 'retention_call'"
