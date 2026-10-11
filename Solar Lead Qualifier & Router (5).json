@@ -1,0 +1,582 @@
+{
+  "name": "Solar Lead Qualifier & Router",
+  "nodes": [
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Score this solar lead from 1-10 and return ONLY raw JSON, no markdown, with keys: score, recommended_action (one of human_sales/automated_nurture/deep_research), reasoning. Lead data: {{ JSON.stringify($json.body) }}"
+      },
+      "id": "2b1d5116-3b0d-4c96-bb5a-7223b4c88171",
+      "name": "Score Lead with Gemini",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.4,
+      "position": [
+        -3200,
+        304
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-3.5-flash-lite",
+        "options": {
+          "maxOutputTokens": 1024,
+          "temperature": 0.3
+        }
+      },
+      "id": "d642b24d-7993-4238-8a9d-ab1a3485fc85",
+      "name": "Google Gemini Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        -3184,
+        512
+      ],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "zTXW4fz2mIj2EB4i",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract response text safely (handles .text from Gemini or .response from Claude)\nconst rawItem = $input.first().json;\nconst aiResponse = rawItem.text || rawItem.response || rawItem.output;\n\nif (!aiResponse) {\n  throw new Error(\"No text output found from the AI node.\");\n}\n\n// Strip markdown code fences if present\nlet cleaned = aiResponse.trim();\ncleaned = cleaned.replace(/^```(?:json)?\\s*\\n?/i, '');\ncleaned = cleaned.replace(/\\n?```\\s*$/i, '');\n\n// Find JSON object in the cleaned response\nconst jsonMatch = cleaned.match(/\\{[\\s\\S]*\\}/);\nif (!jsonMatch) {\n  throw new Error('No valid JSON found in AI response: ' + aiResponse);\n}\n\nconst parsed = JSON.parse(jsonMatch[0]);\n\n// Validate required fields\nif (parsed.score === undefined || !parsed.recommended_action || !parsed.reasoning) {\n  throw new Error('Missing required fields. Got: ' + JSON.stringify(parsed));\n}\n\nconst validActions = ['human_sales', 'automated_nurture', 'deep_research'];\nif (!validActions.includes(parsed.recommended_action)) {\n  throw new Error('Invalid recommended_action: ' + parsed.recommended_action);\n}\n\n// Clamp score to 1-10 range\nconst score = Math.max(1, Math.min(10, Math.round(parsed.score)));\n\n// Return structured data with original lead info\nreturn [{\n  json: {\n    score: score,\n    recommended_action: parsed.recommended_action,\n    reasoning: parsed.reasoning,\n    confidence: score / 10,\n    lead: $('Webhook Trigger1').first().json.body\n  }\n}];"
+      },
+      "id": "9014318c-75bb-4048-b095-b22cf9f23ee7",
+      "name": "Parse AI Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2864,
+        144
+      ]
+    },
+    {
+      "parameters": {
+        "tableId": "router_logs",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "agent_id",
+              "fieldValue": "solar_qualifier"
+            },
+            {
+              "fieldId": "platform",
+              "fieldValue": "n8n"
+            },
+            {
+              "fieldId": "decision",
+              "fieldValue": "={{ $json.recommended_action }}"
+            },
+            {
+              "fieldId": "confidence",
+              "fieldValue": "={{ Number($json.confidence) }}"
+            }
+          ]
+        }
+      },
+      "id": "781a996a-4725-46a6-a191-8cf86e63f0e2",
+      "name": "Log to Router",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        -2640,
+        304
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "TQK7OWbfZfAkSDyJ",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $('Parse AI Response').first().json.recommended_action }}",
+                    "rightValue": "human_sales",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "human_sales"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $('Parse AI Response').first().json.recommended_action }}",
+                    "rightValue": "automated_nurture",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "automated_nurture"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $('Parse AI Response').first().json.recommended_action }}",
+                    "rightValue": "deep_research",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "deep_research"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "fd7de699-72fa-40d0-8ec5-a389f0b2d305",
+      "name": "Route by Action",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [
+        -2416,
+        288
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://webhook.site/78eb7301-660b-4feb-a31a-93f624898ceb?route=sales",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ lead: $('Parse AI Response').first().json.lead, score: $('Parse AI Response').first().json.score, recommended_action: $('Parse AI Response').first().json.recommended_action, reasoning: $('Parse AI Response').first().json.reasoning }) }}",
+        "options": {}
+      },
+      "id": "0a352977-a853-428e-8159-0a70dac216a9",
+      "name": "POST to Sales Webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -2144,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://webhook.site/78eb7301-660b-4feb-a31a-93f624898ceb?route=nurture",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ lead: $('Parse AI Response').first().json.lead, score: $('Parse AI Response').first().json.score, recommended_action: $('Parse AI Response').first().json.recommended_action, reasoning: $('Parse AI Response').first().json.reasoning }) }}",
+        "options": {}
+      },
+      "id": "0c640fe4-d777-46cc-85e8-5f606ad6a1b4",
+      "name": "POST to Nurture Webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -2144,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://webhook.site/78eb7301-660b-4feb-a31a-93f624898ceb?route=research",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ lead: $('Parse AI Response').first().json.lead, score: $('Parse AI Response').first().json.score, recommended_action: $('Parse AI Response').first().json.recommended_action, reasoning: $('Parse AI Response').first().json.reasoning }) }}",
+        "options": {}
+      },
+      "id": "98f154e7-5a73-4f0e-9066-b81e8175ee8b",
+      "name": "POST to Research Webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -2144,
+        512
+      ]
+    },
+    {
+      "parameters": {
+        "tableId": "router_logs",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "agent_id",
+              "fieldValue": "solar_qualifier"
+            },
+            {
+              "fieldId": "platform",
+              "fieldValue": "n8n"
+            },
+            {
+              "fieldId": "decision",
+              "fieldValue": "={{ $('Parse AI Response').first().json.recommended_action }}"
+            },
+            {
+              "fieldId": "confidence",
+              "fieldValue": "={{ Number($('Parse AI Response').first().json.confidence) }}"
+            },
+            {
+              "fieldId": "outcome",
+              "fieldValue": "success"
+            }
+          ]
+        }
+      },
+      "id": "1d406d17-8413-438a-a462-2dedf223b06b",
+      "name": "Log Sales Outcome",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        -1856,
+        80
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "TQK7OWbfZfAkSDyJ",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "tableId": "router_logs",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "agent_id",
+              "fieldValue": "solar_qualifier"
+            },
+            {
+              "fieldId": "platform",
+              "fieldValue": "n8n"
+            },
+            {
+              "fieldId": "decision",
+              "fieldValue": "={{ $('Parse AI Response').first().json.recommended_action }}"
+            },
+            {
+              "fieldId": "confidence",
+              "fieldValue": "={{ Number($('Parse AI Response').first().json.confidence) }}"
+            },
+            {
+              "fieldId": "outcome",
+              "fieldValue": "success"
+            }
+          ]
+        }
+      },
+      "id": "ac52dc3e-9289-4301-b9bb-8c934369ba12",
+      "name": "Log Nurture Outcome",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        -1856,
+        304
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "TQK7OWbfZfAkSDyJ",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "tableId": "router_logs",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "agent_id",
+              "fieldValue": "solar_qualifier"
+            },
+            {
+              "fieldId": "platform",
+              "fieldValue": "n8n"
+            },
+            {
+              "fieldId": "decision",
+              "fieldValue": "={{ $('Parse AI Response').first().json.recommended_action }}"
+            },
+            {
+              "fieldId": "confidence",
+              "fieldValue": "={{ Number($('Parse AI Response').first().json.confidence) }}"
+            },
+            {
+              "fieldId": "outcome",
+              "fieldValue": "success"
+            }
+          ]
+        }
+      },
+      "id": "09c518e3-5fcd-4a88-898b-b03d63c4eb1f",
+      "name": "Log Research Outcome",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        -1856,
+        512
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "TQK7OWbfZfAkSDyJ",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "solar-lead-qualifier",
+        "options": {}
+      },
+      "id": "f4e185fd-ba85-4cdd-a9b6-d090861c7bca",
+      "name": "Webhook Trigger1",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -3472,
+        304
+      ],
+      "webhookId": "solar-lead-qualifier"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://webhook.site/78eb7301-660b-4feb-a31a-93f624898ceb?route=nurture",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "=  {{ JSON.stringify({ lead: $('Webhook Trigger1').first().json.body, recommended_action: 'automated_nurture', reasoning: 'Fallback: Gemini failed' }) }}",
+        "options": {}
+      },
+      "id": "1c3f92f1-8573-4e60-b466-1868ac5ef00e",
+      "name": "Fallback POST to Nurture",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -2848,
+        592
+      ]
+    },
+    {
+      "parameters": {
+        "tableId": "router_logs",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "agent_id",
+              "fieldValue": "solar_qualifier"
+            },
+            {
+              "fieldId": "platform",
+              "fieldValue": "n8n"
+            },
+            {
+              "fieldId": "decision",
+              "fieldValue": "automated_nurture"
+            },
+            {
+              "fieldId": "outcome",
+              "fieldValue": "error"
+            },
+            {
+              "fieldId": "error_message",
+              "fieldValue": "={{ $json.error }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        -2864,
+        384
+      ],
+      "id": "c38fd227-a0b6-4cc3-a912-900b7416cb70",
+      "name": "Log Gemini Error",
+      "credentials": {
+        "supabaseApi": {
+          "id": "TQK7OWbfZfAkSDyJ",
+          "name": "Supabase account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Score Lead with Gemini": {
+      "main": [
+        [
+          {
+            "node": "Parse AI Response",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log Gemini Error",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fallback POST to Nurture",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Score Lead with Gemini",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse AI Response": {
+      "main": [
+        [
+          {
+            "node": "Log to Router",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log to Router": {
+      "main": [
+        [
+          {
+            "node": "Route by Action",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route by Action": {
+      "main": [
+        [
+          {
+            "node": "POST to Sales Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "POST to Nurture Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "POST to Research Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "POST to Sales Webhook": {
+      "main": [
+        [
+          {
+            "node": "Log Sales Outcome",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "POST to Nurture Webhook": {
+      "main": [
+        [
+          {
+            "node": "Log Nurture Outcome",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "POST to Research Webhook": {
+      "main": [
+        [
+          {
+            "node": "Log Research Outcome",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook Trigger1": {
+      "main": [
+        [
+          {
+            "node": "Score Lead with Gemini",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "cd69eac1-109a-4553-a141-aa8369386859",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "3dca9c6859dcde23ec36e0a49e3af2e6314a253f7026c744dc1a0d483f801a8a"
+  },
+  "nodeGroups": [],
+  "id": "Kb8E2NQ8yK6WGiiM",
+  "tags": []
+}

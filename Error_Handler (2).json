@@ -1,0 +1,246 @@
+{
+  "name": "Error_Handler",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "11e43640-30e6-4b3f-888c-dff5951310ff",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        -304,
+        112
+      ]
+    },
+    {
+      "parameters": {
+        "tableId": "router_logs",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "agent_id",
+              "fieldValue": "churn_qualifier"
+            },
+            {
+              "fieldId": "platform",
+              "fieldValue": "n8n"
+            },
+            {
+              "fieldId": "decision",
+              "fieldValue": "={{ 'error at: ' + $json.execution.lastNodeExecuted }}"
+            },
+            {
+              "fieldId": "outcome",
+              "fieldValue": "error"
+            },
+            {
+              "fieldId": "error_message",
+              "fieldValue": "={{ $json.execution.error.message }}"
+            }
+          ]
+        }
+      },
+      "id": "029cce46-912d-4066-b5c6-7bd9d6136a7c",
+      "name": "Log Error to Supabase",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        -16,
+        -320
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "TQK7OWbfZfAkSDyJ",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://webhook.site/78eb7301-660b-4feb-a31a-93f624898ceb?route=error",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ workflow_name: $json.workflow.name, failed_node: $json.execution.lastNodeExecuted, error_message: $json.execution.error.message }) }}",
+        "options": {}
+      },
+      "id": "43a6bca9-d5fe-4786-9ea7-f26edf0da0c3",
+      "name": "Send Error Alert",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        112,
+        112
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are an n8n workflow repair assistant. A workflow has failed. - Workflow: {{ $json.workflow.name }} - Failed node: {{ $json.execution.lastNodeExecuted }} - Error message: {{ $json.execution.error.message }} Respond with ONLY raw JSON, no markdown, with keys: diagnosis (plain-language likely cause), fix_description (what specifically needs to change), urgency (LOW, MEDIUM or HIGH), auto_fixable (true or false)."
+      },
+      "id": "0b6f7862-28c6-4261-90ca-23b64c876682",
+      "name": "Diagnose Error with Gemini",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.4,
+      "position": [
+        -32,
+        336
+      ]
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-3.5-flash",
+        "options": {
+          "maxOutputTokens": 1024,
+          "temperature": 0.2
+        }
+      },
+      "id": "60347051-1267-425c-94fa-1c84de259062",
+      "name": "Gemini Diagnosis Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        48,
+        624
+      ],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "zTXW4fz2mIj2EB4i",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://webhook.site/78eb7301-660b-4feb-a31a-93f624898ceb?route=diagnosis",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ workflow_name: $('Error Trigger').first().json.workflow.name, failed_node: $('Error Trigger').first().json.execution.lastNodeExecuted, diagnosis: $json.text }) }}",
+        "options": {}
+      },
+      "id": "2a1af060-e382-4af4-9ea0-8e1d80a8811a",
+      "name": "Send Diagnosis Alert",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        288,
+        464
+      ]
+    },
+    {
+      "parameters": {
+        "tableId": "system_logs",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "platform",
+              "fieldValue": "n8n"
+            },
+            {
+              "fieldId": "component",
+              "fieldValue": "={{ $json.workflow.name }}"
+            },
+            {
+              "fieldId": "event_type",
+              "fieldValue": "error"
+            },
+            {
+              "fieldId": "agent_id",
+              "fieldValue": "churn_qualifier"
+            },
+            {
+              "fieldId": "decision",
+              "fieldValue": "={{ 'error at: ' + $json.execution.lastNodeExecuted }}"
+            },
+            {
+              "fieldId": "outcome",
+              "fieldValue": "error"
+            },
+            {
+              "fieldId": "error_message",
+              "fieldValue": "={{ $json.execution.error.message }}"
+            }
+          ]
+        }
+      },
+      "id": "689a87a6-18e1-4e2d-b59b-8bcb27514f8d",
+      "name": "Log Error to system_logs",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        256,
+        -144
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "TQK7OWbfZfAkSDyJ",
+          "name": "Supabase account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Log Error to Supabase",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send Error Alert",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Diagnose Error with Gemini",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log Error to system_logs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini Diagnosis Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Diagnose Error with Gemini",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Diagnose Error with Gemini": {
+      "main": [
+        [
+          {
+            "node": "Send Diagnosis Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "1116a693-c051-469b-9f70-f00b05a5d2f9",
+  "meta": {
+    "instanceId": "3dca9c6859dcde23ec36e0a49e3af2e6314a253f7026c744dc1a0d483f801a8a"
+  },
+  "nodeGroups": [],
+  "id": "nq3sPAaXAdQScafA",
+  "tags": []
+}

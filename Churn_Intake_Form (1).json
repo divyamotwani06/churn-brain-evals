@@ -1,0 +1,113 @@
+{
+  "name": "Churn_Intake_Form",
+  "nodes": [
+    {
+      "parameters": {
+        "formTitle": "Customer Churn Check",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "customer_name",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "email",
+              "fieldType": "email",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "plan",
+              "fieldType": "dropdown",
+              "fieldOptions": {
+                "values": [
+                  {
+                    "option": "basic"
+                  },
+                  {
+                    "option": "standard"
+                  },
+                  {
+                    "option": "premium"
+                  },
+                  {
+                    "option": "pro"
+                  }
+                ]
+              },
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "months_active",
+              "fieldType": "number",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "support_tickets_last_30d",
+              "fieldType": "number",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "last_login_days_ago",
+              "fieldType": "number",
+              "requiredField": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.6,
+      "position": [
+        0,
+        0
+      ],
+      "id": "81c670c6-7232-4635-b743-ae355366e41a",
+      "name": "Customer Churn Check",
+      "webhookId": "d4a69418-f8dd-4f52-9fcb-108df9019130"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://alabsabc.app.n8n.cloud/webhook/churn-qualifier",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ customer_name: $json.customer_name, email: $json.email, plan: $json.plan, months_active: $json.months_active, support_tickets_last_30d: $json.support_tickets_last_30d, last_login_days_ago: $json.last_login_days_ago }) }}",
+        "options": {}
+      },
+      "id": "bc9fc9a7-dcf5-4edc-a696-a39582018284",
+      "name": "POST to Churn",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        192,
+        0
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Customer Churn Check": {
+      "main": [
+        [
+          {
+            "node": "POST to Churn",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "28f6061c-53ee-46f0-a47b-d75bf6436e60",
+  "meta": {
+    "instanceId": "3dca9c6859dcde23ec36e0a49e3af2e6314a253f7026c744dc1a0d483f801a8a"
+  },
+  "nodeGroups": [],
+  "id": "mL1XS4A8xe1w3wfv",
+  "tags": []
+}
