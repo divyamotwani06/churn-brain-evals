@@ -74,10 +74,11 @@ Saved in the Supabase SQL editor against `system_logs`: full timeline (24h), err
 
 ## Honest notes and limits
 
-- **Built with AI assistance.** The Churn workflow, Error_Handler, the Gemini fallback and the intake form were generated or edited with an AI assistant and then tested and debugged by me. The overall pattern follows the AAOL course material.
+- **Built with AI assistance.** The Churn workflow, Error_Handler, the Gemini fallback and the intake form were generated or edited with an AI assistant and then tested and debugged by me. The overall pattern follows the AAOL course material, and the Solar lead-qualifier follows a course exercise.
 - **The "diagnosis" does not repair anything.** It explains the likely cause and rates urgency. It marked its own suggestions as not auto-fixable. It also sometimes suggests outdated model names, so its fix text should be read, not trusted.
 - **`confidence` is not real confidence.** It is risk score / 10.
 - **The fallback is a default, not a real score.** When Gemini fails, the customer is treated as medium risk (`automated_winback`, score 5) and the reasoning says so. A genuinely high-risk customer could be under-routed during an outage, so `fallback` rows in `system_logs` must be reviewed manually.
+- **Solar Lead Qualifier & Router** is an earlier course exercise (lead scoring with the same pattern), kept as a second example. It has a Gemini fallback that routes to nurture and logs the error. Its `deep_research` route was only tested with simulated input, because the model never chose it on real input, and its prompt has no scoring rubric, so it can over-score incomplete leads. It is not part of the churn pipeline.
 - **Routing targets are mock webhooks** (webhook.site), not a real CRM or email system.
 - **Not production.** Single Supabase table without row-level security, a free n8n trial, no real customer data, no throughput or time-saved metrics.
 - **Unverified in the last test run:** the webhook.site error and diagnosis payloads were not re-checked after the forced failure.
@@ -86,4 +87,8 @@ Saved in the Supabase SQL editor against `system_logs`: full timeline (24h), err
 
 - `promptfooconfig.yaml`: eval suite
 - `.github/workflows/eval.yml`: CI gate
-- n8n workflow exports (`Churn_Qualifier_v2`, `Error_Handler`, `Churn_Intake_Form`)
+- n8n workflow exports (the `.json` files in the repo root):
+  - Churn_Qualifier: the scoring, routing and fallback workflow (current version)
+  - Churn_Intake_Form: the public form
+  - Error_Handler: the central failure workflow
+  - Solar Lead Qualifier & Router: earlier course exercise
