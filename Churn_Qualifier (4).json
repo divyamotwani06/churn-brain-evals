@@ -1,0 +1,687 @@
+{
+  "name": "Churn_Qualifier",
+  "nodes": [
+    {
+      "parameters": {
+        "jsCode": "// Gemini failed: hand Parse a default medium-risk answer so routing, logging and the reply still work.\nreturn [{ json: { text: JSON.stringify({ score: 5, recommended_action: 'automated_winback', reasoning: 'Fallback: Gemini scoring failed, default medium-risk action applied. Needs manual review.' }) } }];"
+      },
+      "id": "5981d1e8-7335-430f-a9ba-02fa6fe956c1",
+      "name": "Fallback Gemini JSON",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -3424,
+        9872
+      ]
+    },
+    {
+      "parameters": {
+        "tableId": "system_logs",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "platform",
+              "fieldValue": "n8n"
+            },
+            {
+              "fieldId": "component",
+              "fieldValue": "Churn_Qualifier"
+            },
+            {
+              "fieldId": "event_type",
+              "fieldValue": "fallback"
+            },
+            {
+              "fieldId": "agent_id",
+              "fieldValue": "churn_qualifier"
+            },
+            {
+              "fieldId": "decision",
+              "fieldValue": "fallback: automated_winback"
+            },
+            {
+              "fieldId": "confidence",
+              "fieldValue": "0.5"
+            },
+            {
+              "fieldId": "outcome",
+              "fieldValue": "error"
+            },
+            {
+              "fieldId": "error_message",
+              "fieldValue": "={{ $json.error }}"
+            }
+          ]
+        }
+      },
+      "id": "871715a4-bd9b-405f-bc38-a9f8a5689065",
+      "name": "Log Gemini Fallback",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        -3424,
+        10048
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "TQK7OWbfZfAkSDyJ",
+          "name": "Supabase account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { score: $json.score, recommended_action: $json.recommended_action, reasoning: $json.reasoning } }}",
+        "options": {}
+      },
+      "id": "fb0acab4-c547-4a95-9c0f-508ec2df7144",
+      "name": "Respond to Form",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -3104,
+        9280
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Score this customer's churn risk from 1-10 (10 = very likely to cancel soon) and return ONLY raw JSON, no markdown, with keys: score, recommended_action (one of retention_call/automated_winback/monitor), reasoning. Use retention_call for high risk (7-10), automated_winback for medium risk (4-6), monitor for low risk (1-3). Customer data: {{ JSON.stringify($json.body) }}"
+      },
+      "id": "dadf1f0e-779e-489a-b662-84ca718ef690",
+      "name": "Score Churn Risk with Gemini1",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.4,
+      "position": [
+        -3632,
+        9488
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract response text safely (handles .text from Gemini or .response from Claude)\nconst rawItem = $input.first().json;\nconst aiResponse = rawItem.text || rawItem.response || rawItem.output;\n\nif (!aiResponse) {\n  throw new Error(\"No text output found from the AI node.\");\n}\n\n// Strip markdown code fences if present\nlet cleaned = aiResponse.trim();\ncleaned = cleaned.replace(/^```(?:json)?\\s*\\n?/i, '');\ncleaned = cleaned.replace(/\\n?```\\s*$/i, '');\n\n// Find JSON object in the cleaned response\nconst jsonMatch = cleaned.match(/\\{[\\s\\S]*\\}/);\nif (!jsonMatch) {\n  throw new Error('No valid JSON found in AI response: ' + aiResponse);\n}\n\nconst parsed = JSON.parse(jsonMatch[0]);\n\n// Validate required fields\nif (parsed.score === undefined || !parsed.recommended_action || !parsed.reasoning) {\n  throw new Error('Missing required fields. Got: ' + JSON.stringify(parsed));\n}\n\nconst validActions = ['retention_call', 'automated_winback', 'monitor'];\nif (!validActions.includes(parsed.recommended_action)) {\n  throw new Error('Invalid recommended_action: ' + parsed.recommended_action);\n}\n\n// Clamp score to 1-10 range\nconst score = Math.max(1, Math.min(10, Math.round(parsed.score)));\n\n// Return structured data with original lead info\nreturn [{\n  json: {\n    score: score,\n    recommended_action: parsed.recommended_action,\n    reasoning: parsed.reasoning,\n    confidence: score / 10,\n    customer: $('Churn Webhook1').first().json.body\n  }\n}];"
+      },
+      "id": "b2192b86-c222-4ee7-b4fd-5d1bc54c1201",
+      "name": "Parse Churn Response1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -3296,
+        9488
+      ]
+    },
+    {
+      "parameters": {
+        "tableId": "router_logs",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "agent_id",
+              "fieldValue": "churn_qualifier"
+            },
+            {
+              "fieldId": "platform",
+              "fieldValue": "n8n"
+            },
+            {
+              "fieldId": "decision",
+              "fieldValue": "={{ $json.recommended_action }}"
+            },
+            {
+              "fieldId": "confidence",
+              "fieldValue": "={{ Number($json.confidence) }}"
+            }
+          ]
+        }
+      },
+      "id": "17e7859d-c7ca-4178-994b-40705b55e3dd",
+      "name": "Log Routing Decision1",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        -3104,
+        9488
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "TQK7OWbfZfAkSDyJ",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $('Parse Churn Response1').first().json.recommended_action }}",
+                    "rightValue": "retention_call",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "retention_call"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $('Parse Churn Response1').first().json.recommended_action }}",
+                    "rightValue": "automated_winback",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "automated_winback"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $('Parse Churn Response1').first().json.recommended_action }}",
+                    "rightValue": "monitor",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "monitor"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "f094e6ce-d675-4a30-bdc0-b73e9db16885",
+      "name": "Route by Churn Action1",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [
+        -2848,
+        9488
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://webhook.site/78eb7301-660b-4feb-a31a-93f624898ceb?route=retention",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ customer: $('Parse Churn Response1').first().json.customer, score: $('Parse Churn Response1').first().json.score, recommended_action: $('Parse Churn Response1').first().json.recommended_action, reasoning: $('Parse Churn Response1').first().json.reasoning }) }}",
+        "options": {}
+      },
+      "id": "4d5b4020-ef36-4147-aa08-698bbdf2c4ca",
+      "name": "POST to Retention Webhook2",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -2576,
+        9264
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://webhook.site/78eb7301-660b-4feb-a31a-93f624898ceb?route=winback",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ customer: $('Parse Churn Response1').first().json.customer, score: $('Parse Churn Response1').first().json.score, recommended_action: $('Parse Churn Response1').first().json.recommended_action, reasoning: $('Parse Churn Response1').first().json.reasoning }) }}",
+        "options": {}
+      },
+      "id": "a2986585-b405-42a2-ade5-2900e4cda12f",
+      "name": "POST to Winback Webhook1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -2576,
+        9488
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://webhook.site/78eb7301-660b-4feb-a31a-93f624898ceb?route=monitor",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ customer: $('Parse Churn Response1').first().json.customer, score: $('Parse Churn Response1').first().json.score, recommended_action: $('Parse Churn Response1').first().json.recommended_action, reasoning: $('Parse Churn Response1').first().json.reasoning }) }}",
+        "options": {}
+      },
+      "id": "e76dd7e0-4747-418c-9750-a70e36227f27",
+      "name": "POST to Monitor Webhook1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -2576,
+        9696
+      ]
+    },
+    {
+      "parameters": {
+        "tableId": "router_logs",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "agent_id",
+              "fieldValue": "churn_qualifier"
+            },
+            {
+              "fieldId": "platform",
+              "fieldValue": "n8n"
+            },
+            {
+              "fieldId": "decision",
+              "fieldValue": "={{ $('Parse Churn Response1').first().json.recommended_action }}"
+            },
+            {
+              "fieldId": "confidence",
+              "fieldValue": "={{ Number($('Parse Churn Response1').first().json.confidence) }}"
+            },
+            {
+              "fieldId": "outcome",
+              "fieldValue": "success"
+            }
+          ]
+        }
+      },
+      "id": "92b794e3-4a03-4e06-bc21-8f0ca03a9a2a",
+      "name": "Log Retention Outcome2",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        -2288,
+        9264
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "TQK7OWbfZfAkSDyJ",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "tableId": "router_logs",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "agent_id",
+              "fieldValue": "churn_qualifier"
+            },
+            {
+              "fieldId": "platform",
+              "fieldValue": "n8n"
+            },
+            {
+              "fieldId": "decision",
+              "fieldValue": "={{ $('Parse Churn Response1').first().json.recommended_action }}"
+            },
+            {
+              "fieldId": "confidence",
+              "fieldValue": "={{ Number($('Parse Churn Response1').first().json.confidence) }}"
+            },
+            {
+              "fieldId": "outcome",
+              "fieldValue": "success"
+            }
+          ]
+        }
+      },
+      "id": "d6fad0d3-1d22-4e53-b205-b4116e06b109",
+      "name": "Log Winback Outcome1",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        -2288,
+        9488
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "TQK7OWbfZfAkSDyJ",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "tableId": "router_logs",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "agent_id",
+              "fieldValue": "churn_qualifier"
+            },
+            {
+              "fieldId": "platform",
+              "fieldValue": "n8n"
+            },
+            {
+              "fieldId": "decision",
+              "fieldValue": "={{ $('Parse Churn Response1').first().json.recommended_action }}"
+            },
+            {
+              "fieldId": "confidence",
+              "fieldValue": "={{ Number($('Parse Churn Response1').first().json.confidence) }}"
+            },
+            {
+              "fieldId": "outcome",
+              "fieldValue": "success"
+            }
+          ]
+        }
+      },
+      "id": "dfab5bf4-7273-4e66-8c12-7c7674a04dc9",
+      "name": "Log Monitor Outcome1",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        -2288,
+        9696
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "TQK7OWbfZfAkSDyJ",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "churn-qualifier",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "8a0e172e-44b7-47a1-8d58-80f85bd7a515",
+      "name": "Churn Webhook1",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -3904,
+        9488
+      ],
+      "webhookId": "churn-qualifier"
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-3.5-flash-lite",
+        "options": {
+          "maxOutputTokens": 1024,
+          "temperature": 0.3
+        }
+      },
+      "id": "9e4e683a-7ebc-4827-8f6b-55ff05499023",
+      "name": "Google Gemini Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        -3616,
+        9696
+      ],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "zTXW4fz2mIj2EB4i",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "tableId": "system_logs",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "platform",
+              "fieldValue": "n8n"
+            },
+            {
+              "fieldId": "component",
+              "fieldValue": "Churn_Qualifier"
+            },
+            {
+              "fieldId": "event_type",
+              "fieldValue": "decision"
+            },
+            {
+              "fieldId": "agent_id",
+              "fieldValue": "churn_qualifier"
+            },
+            {
+              "fieldId": "input_summary",
+              "fieldValue": "={{ 'plan=' + $json.customer.plan + ', tickets_30d=' + $json.customer.support_tickets_last_30d + ', last_login_days=' + $json.customer.last_login_days_ago }}"
+            },
+            {
+              "fieldId": "decision",
+              "fieldValue": "={{ $json.recommended_action }}"
+            },
+            {
+              "fieldId": "confidence",
+              "fieldValue": "={{ Number($json.confidence) }}"
+            },
+            {
+              "fieldId": "outcome",
+              "fieldValue": "success"
+            }
+          ]
+        }
+      },
+      "id": "71b8948a-ba8a-4ed8-9e06-d76626723f11",
+      "name": "Log Decision to system_logs1",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        -3104,
+        9696
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "TQK7OWbfZfAkSDyJ",
+          "name": "Supabase account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Fallback Gemini JSON": {
+      "main": [
+        [
+          {
+            "node": "Parse Churn Response1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Score Churn Risk with Gemini1": {
+      "main": [
+        [
+          {
+            "node": "Parse Churn Response1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Fallback Gemini JSON",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log Gemini Fallback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Churn Response1": {
+      "main": [
+        [
+          {
+            "node": "Log Routing Decision1",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log Decision to system_logs1",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Respond to Form",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Routing Decision1": {
+      "main": [
+        [
+          {
+            "node": "Route by Churn Action1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route by Churn Action1": {
+      "main": [
+        [
+          {
+            "node": "POST to Retention Webhook2",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "POST to Winback Webhook1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "POST to Monitor Webhook1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "POST to Retention Webhook2": {
+      "main": [
+        [
+          {
+            "node": "Log Retention Outcome2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "POST to Winback Webhook1": {
+      "main": [
+        [
+          {
+            "node": "Log Winback Outcome1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "POST to Monitor Webhook1": {
+      "main": [
+        [
+          {
+            "node": "Log Monitor Outcome1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Churn Webhook1": {
+      "main": [
+        [
+          {
+            "node": "Score Churn Risk with Gemini1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Score Churn Risk with Gemini1",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "timeSavedMode": "fixed",
+    "errorWorkflow": "nq3sPAaXAdQScafA",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "versionId": "3e3c4585-5e44-44ce-8e2e-4490ca3d8dac",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "3dca9c6859dcde23ec36e0a49e3af2e6314a253f7026c744dc1a0d483f801a8a"
+  },
+  "nodeGroups": [],
+  "id": "lf4fP2Lt2FA3S9PY",
+  "tags": []
+}
